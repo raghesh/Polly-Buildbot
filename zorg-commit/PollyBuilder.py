@@ -8,6 +8,7 @@ from buildbot.process.properties import WithProperties
 
 def getPollyBuildFactory():
     llvm_srcdir = "llvm.src"
+    llvm_objdir = "llvm.obj"
     cloog_srcdir = "cloog.src"
     cloog_installdir = "cloog.install"
 
@@ -30,7 +31,6 @@ def getPollyBuildFactory():
                                haltOnFailure=True,
                                description=["get isl submodule"],
                                workdir=cloog_srcdir))
-
     # Get LLVM and Polly
     f.addStep(SVN(name='svn-llvm',
                   mode='update',
@@ -42,21 +42,21 @@ def getPollyBuildFactory():
                   baseURL='http://llvm.org/svn/llvm-project/polly/',
                   defaultBranch='trunk',
                   workdir='%s/tools/polly' % llvm_srcdir))
-
     # Build Cloog and isl
     f.addStep(ShellCommand(name="autogen-cloog-isl",
                                command=["./autogen.sh"],
                                haltOnFailure=True,
                                description=["autogen cloog and isl"],
                                workdir=cloog_srcdir))
-    args = []
-    args.append(WithProperties("%%(builddir)s/%s/configure" % cloog_srcdir))
-    args.append(WithProperties("--prefix=%%(builddir)s/%s" % cloog_installdir))
-
-    f.addStep(Configure(command=args,
+    confargs = []
+    confargs.append(WithProperties("%%(builddir)s/%s/configure"
+                                    % cloog_srcdir))
+    confargs.append(WithProperties("--prefix=%%(builddir)s/%s"
+                                    % cloog_installdir))
+    f.addStep(Configure(name="cloog-configure",
+                        command=confargs,
                         workdir=cloog_srcdir,
-                        description=['configuring']))
-
+                        description=['cloog-configure']))
     f.addStep(ShellCommand(name="build-cloog-isl",
                                command=["make"],
                                haltOnFailure=True,
@@ -67,26 +67,34 @@ def getPollyBuildFactory():
                                haltOnFailure=True,
                                description=["install cloog and isl"],
                                workdir=cloog_srcdir))
-
-    # Create configurtion files with cmake
-    f.addStep(ShellCommand(name="cmake_configure",
-                               command=["cmake", llvm_srcdir],
+    # Create configuration files with cmake
+    f.addStep(ShellCommand(name="create-build-dir",
+                               command=["mkdir", llvm_objdir],
+                               haltOnFailure=False,
+                               description=["create build dir"],
+                               workdir="."))
+    f.addStep(ShellCommand(name="cmake-configure",
+                               command=["cmake", "../%s" %llvm_srcdir],
+                               haltOnFailure=False,
+                               description=["cmake configure"],
+                               workdir=llvm_objdir))
+    cloogpath = WithProperties("-DCMAKE_PREFIX_PATH=%%(builddir)s/%s"
+                                % cloog_installdir)
+    f.addStep(ShellCommand(name="cmake-cloog-path",
+                               command=["cmake", cloogpath, "."],
                                haltOnFailure=True,
-                               description=["cmake llvm dir"],
-                               workdir=llvm_srcdir))
-
+                               description=["cmake cloog path"],
+                               workdir=llvm_objdir))
     # Build Polly
     f.addStep(ShellCommand(name="build_polly",
                                command=["make"],
                                haltOnFailure=True,
                                description=["build polly"],
-                               workdir=llvm_srcdir))
-
+                               workdir=llvm_objdir))
     # Test Polly
     f.addStep(ShellCommand(name="test_polly",
                                command=["make", "polly-test"],
                                haltOnFailure=True,
                                description=["test polly"],
-                               workdir=llvm_srcdir))
-
+                               workdir=llvm_objdir))
     return f
