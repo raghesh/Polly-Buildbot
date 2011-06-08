@@ -6,22 +6,14 @@ from buildbot.steps.source import SVN, Git
 from buildbot.steps.shell import Configure, ShellCommand
 from buildbot.process.properties import WithProperties
 
-def getPollyBuildFactory():
-    llvm_srcdir = "llvm.src"
-    llvm_objdir = "llvm.obj"
+f = buildbot.process.factory.BuildFactory()
+
+def installRequiredLibs():
     cloog_srcdir = "cloog.src"
     isl_srcdir = "isl.src"
-    cloog_installdir = "cloog.install"
+    cloog_installdir = isl_installdir = "cloog.install"
 
-    f = buildbot.process.factory.BuildFactory()
-
-    # Determine the build directory.
-    f.addStep(buildbot.steps.shell.SetProperty(name="get_builddir",
-                                               command=["pwd"],
-                                               property="builddir",
-                                               description="set build dir",
-                                               workdir="."))
-    # Checkout sources.
+    global f
     # Get Cloog
     f.addStep(Git(repourl='git://repo.or.cz/cloog.git',
                   mode='update',
@@ -30,17 +22,6 @@ def getPollyBuildFactory():
     f.addStep(Git(repourl='git://repo.or.cz/isl.git',
                   mode='update',
                   workdir=isl_srcdir))
-    # Get LLVM and Polly
-    f.addStep(SVN(name='svn-llvm',
-                  mode='update',
-                  baseURL='http://llvm.org/svn/llvm-project/llvm/',
-                  defaultBranch='trunk',
-                  workdir=llvm_srcdir))
-    f.addStep(SVN(name='svn-polly',
-                  mode='update',
-                  baseURL='http://llvm.org/svn/llvm-project/polly/',
-                  defaultBranch='trunk',
-                  workdir='%s/tools/polly' % llvm_srcdir))
     # Build isl
     f.addStep(ShellCommand(name="autogen-isl",
                                command=["./autogen.sh"],
@@ -51,7 +32,7 @@ def getPollyBuildFactory():
     islconfargs.append(WithProperties("%%(builddir)s/%s/configure"
                                     % isl_srcdir))
     islconfargs.append(WithProperties("--prefix=%%(builddir)s/%s"
-                                    % cloog_installdir))
+                                    % isl_installdir))
     f.addStep(Configure(name="isl-configure",
                         command=islconfargs,
                         workdir=isl_srcdir,
@@ -61,7 +42,7 @@ def getPollyBuildFactory():
                                haltOnFailure=True,
                                description=["build cloog"],
                                workdir=isl_srcdir))
-    f.addStep(ShellCommand(name="install-cloog",
+    f.addStep(ShellCommand(name="install-isl",
                                command=["make", "install"],
                                haltOnFailure=True,
                                description=["install isl"],
@@ -94,6 +75,32 @@ def getPollyBuildFactory():
                                haltOnFailure=True,
                                description=["install cloog"],
                                workdir=cloog_srcdir))
+
+def getPollyBuildFactory():
+    llvm_srcdir = "llvm.src"
+    llvm_objdir = "llvm.obj"
+    cloog_installdir = "cloog.install"
+
+    global f
+    # Determine the build directory.
+    f.addStep(buildbot.steps.shell.SetProperty(name="get_builddir",
+                                               command=["pwd"],
+                                               property="builddir",
+                                               description="set build dir",
+                                               workdir="."))
+    # Install Prerequisites
+    installRequiredLibs()
+    # Get LLVM and Polly
+    f.addStep(SVN(name='svn-llvm',
+                  mode='update',
+                  baseURL='http://llvm.org/svn/llvm-project/llvm/',
+                  defaultBranch='trunk',
+                  workdir=llvm_srcdir))
+    f.addStep(SVN(name='svn-polly',
+                  mode='update',
+                  baseURL='http://llvm.org/svn/llvm-project/polly/',
+                  defaultBranch='trunk',
+                  workdir='%s/tools/polly' % llvm_srcdir))
     # Create configuration files with cmake
     f.addStep(ShellCommand(name="create-build-dir",
                                command=["mkdir", llvm_objdir],
